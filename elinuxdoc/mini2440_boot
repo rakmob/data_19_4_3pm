@@ -1,0 +1,191 @@
+=================================================================================================================================
+***************
+#mini2440
+***************
+
+*****************************************************************
+boot using Ethernet:(Initrd)
+====================
+
+setting the host address as per thr serveraddr of target board
+Host# ifconfig eth0 10.0.0.111
+
+--------------------------------------------------------------
+Syntax: tftpboot [loadAddress] [[hostIPaddr:]bootfilename] 
+
+load the uImage into ram location 0x31000000
+MINI2440 # tftpboot 0x31000000 uImage_mini-3.9.8  
+
+load the myfs into ram location 0x31000000
+MINI2440 # tftpboot 0x32000000 mini_fs8M
+
+
+set the bootargs for the kernel use RAM as rootfs and start the location where we load the myfs to the RAM and mention size for upto which location it use its ram as rootfs  
+MINI2440 # setenv bootargs console=ttySAC0,115200 root=ram initrd=0x32000000,8M ${mtdparts}
+
+this command is used to start the booting of kernel from RAM
+MINI2440 # bootm 0x31000000
+
+=====================================================================================================================
+
+Bootinf using nandfs:
+**********************
+
+setting the host address as per thr serveraddr of target board
+Host# ifconfig eth0 10.0.0.111
+
+--------------------------------------------------------------
+Syntax: tftpboot [loadAddress] [[hostIPaddr:]bootfilename] 
+
+load the uImage into ram location 0x31000000
+MINI2440 # tftpboot 0x31000000 uImage_mini-3.9.8  
+
+load the myfs into ram location 0x31000000
+MINI2440 # tftpboot 0x32000000 mini_fs8M
+-------------------------------------------------------------
+type following command to watch the default uboot partions 
+MINI2440 # mtdparts                              
+
+device nand0 <mini2440-nand>, # parts = 4
+ #: name                  size            offset      mask_flags
+ 0: u-boot              0x00040000      0x00000000      0
+ 1: env                 0x00020000      0x00040000      0
+ 2: kernel              0x00500000      0x00060000      0
+ 3: root                0x3faa0000      0x00560000      0
+
+active partition: nand0,0 - (u-boot) 0x00040000 @ 0x00000000
+
+defaults:
+mtdids  : nand0=mini2440-nand
+mtdparts: <NULL>
+
+
+---------------------------------------
+erasing kernel partition of the nand
+MINI2440 # nand erase kernel
+
+NAND erase: device 0 offset 0x60000, size 0x500000
+Erasing at 0x540000 -- 100% complete.
+OK
+ 
+
+erasing root partion of the nand
+MINI2440 # nand erase root
+
+NAND erase: device 0 offset 0x560000, size 0x3faa0000
+Skipping bad block at  0x16ba0000                                            
+Skipping bad block at  0x16be0000                                            
+Skipping bad block at  0x3ff80000                                            
+Skipping bad block at  0x3ffa0000                                            
+Skipping bad block at  0x3ffc0000                                            
+Skipping bad block at  0x3ffe0000                                            
+
+OK
+------------------------------------------------
+writing the uImage into nand
+MINI2440 # nand write 0x31000000 kernel 0x400000
+
+NAND write: device 0 offset 0x60000, size 0x400000
+ 4194304 bytes written: OK
+
+----------------------------------------------------
+
+set the bootargs for the kernel use RAM as rootfs and start the location where we load the myfs to the RAM and mention size for upto which location it use its ram as rootfs  
+MINI2440 # setenv bootargs console=ttySAC0,115200 root=ram initrd=0x32000000,8M ${mtdparts}
+
+this command is used to start the booting of kernel from RAM
+MINI2440 # bootm 0x31000000
+----------------------------------------------------
+
+kernel devide the partitions as uboot partions
+/ # cat /proc/mtd 
+dev:    size   erasesize  name
+mtd0: 00040000 00020000 "u-boot"
+mtd1: 00020000 00020000 "u-boot-env"
+mtd2: 00500000 00020000 "kernel"
+mtd3: 3faa0000 00020000 "root"
+
+
+erasing the nand partition3 by using following command as a character device
+/ # flash_eraseall -j /dev/mtd3
+Erasing 128 Kibyte @ 16620000 - 35% complete. Cleanmarker written at 16620000.
+Skipping bad block at 0x16640000
+Erasing 128 Kibyte @ 16660000 - 35% complete. Cleanmarker written at 16660000.
+Skipping bad block at 0x16680000
+Erasing 128 Kibyte @ 3faa0000 - 100% complete.Cleanmarker written at 3fa80000.
+
+
+mount the nand partion3 to mountpoint as a block device of jffs2
+/ # mount -t jffs2 /dev/mtdblock3 /mnt/
+
+copy the data in root folder into the mount point
+/ # cp -Rfp /rootfs/* /mnt/
+
+unmounting mount point
+/ # umount /mnt
+
+restart target board
+/ # reboot
+
+set the bootargs for the kernel to partion the nand as per uboot partitions and to mount the root from that nand partition3 of type jffs2
+MINI2440 # setenv bootargs console=ttySAC0,115200 noinitrd root=/dev/mtdblock3 rootfstype=jffs2 ${mtdparts}
+
+For automatic booting from nand
+MINI2440 # setenv bootcmd nand read 0x31000000 kernel 0x400000 \; bootm 0x31000000
+
+save all env ronment variables
+MINI2440 # saveenv
+
+restart the uboot
+MINI2440 # reset
+=====================================================================================================================
+NFS booting & mounting rootfs:
+===============================
+
+install this into host 
+sudo apt-get install nfs-kernel-serve 
+
+setting the host address as per thr serveraddr of target board
+Host# ifconfig eth0 10.0.0.111
+
+setenv bootargs console=ttySAC0,115200 ip=10.0.0.111:10.0.0.4::255.255.255.0 root=/dev/nfs nfsroot=10.0.0.4:/mnt; bootm 0x31000000
+
+
+set the bootargs as ip=10.0.0.111(ip of target):10.0.0.4(ip of host)::255.255.255.0(netmask)  nfsroot=10.0.0.4(host ip):/nfs/(exported path)
+tftp 0x31000000 uImage_mini-3.9.8;setenv bootargs console=ttySAC0,115200 ip=10.0.0.111:10.0.0.4::255.255.255.0 root=/dev/nfs nfsroot=10.0.0.4:/mnt/
+
+ 
+nfs 0x31000000 10.0.0.4:/nfs/uImage_nfs 
+bootm 0x31000000
+=====================================================================================================================
+FOR INIT PROGRAM:
+*****************
+
+MINI2440 # setenv bootargs console=ttySAC0,115200 noinitrd root=/dev/mtdblock3 rootfstype=jffs2 ${mtdparts} init=/myint
+
+MINI2440 # nand read 0x31000000 kernel 0x400000 ; bootm 0x31000000
+
+==========================================================================================================================================
+
+NFS booting & mounting rootfs:
+===============================
+
+install this into host 
+sudo apt-get install nfs-kernel-serve 
+
+setting the host address as per thr serveraddr of target board
+Host# ifconfig eth0 10.0.0.111
+
+
+set the bootargs as ip=10.0.0.111(ip of target):(ip of host)::(netmask)
+setenv bootargs console=ttySAC0,115200 ip=10.0.0.111:10.0.0.4::255.255.255.0 root=/dev/nfs nfsroot=10.0.0.4:/nfs/ 
+nfs 0x31000000 10.0.0.4:/nfs/uImage_nfs                    (load kernel from nfs mount partition)
+bootm 0x31000000
+
+
+=>if we want to execute an application as init then give following commands
+tftp 0x31000000 uImage_ubuntu 
+setenv bootargs console=ttySAC0,115200 ip=10.0.0.111:10.0.0.4::255.255.255.0 root=/dev/nfs nfsroot=10.0.0.4:/nfs/ init=myinit 
+bootm 0x31000000
+
+
